@@ -1,0 +1,484 @@
+<!DOCTYPE html><html lang="en"><head><!-- This page is rendered by shoji. Edit metadata.json instead of the page head. -->
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="theme-color" content="#f6f7f4"/>
+  <meta name="description" content="Check DeepSeek API peak and off-peak hours and compare current token prices."/>
+  <title>DeepSeek Price Window</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f6f7f4;
+      --white: #fff;
+      --ink: #17201b;
+      --muted: #727b74;
+      --line: #e5e9e3;
+      --green: #b5f08a;
+      --green-dark: #174b2e;
+      --deep: #163b29;
+      --deep-2: #1e5037;
+      --peak: #c56b45;
+      --radius: 18px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); min-width: 320px; }
+    button, input, select { font: inherit; }
+    button, select, input { color: inherit; }
+    a { color: inherit; }
+    .shell { max-width: 1120px; padding: 0 32px 54px; margin: 0 auto; }
+    .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; background: var(--deep); color: var(--green); font-size: 13px; letter-spacing: -.08em; }
+    .live-label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 650; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    .live-dot { width: 7px; height: 7px; border-radius: 99px; background: #3c9e65; box-shadow: 0 0 0 3px #e2efdf; }
+    .intro { padding: 54px 0 32px; display: flex; align-items: end; justify-content: space-between; gap: 28px; }
+    .eyebrow { margin: 0 0 12px; color: var(--green-dark); font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 0; max-width: 680px; font-size: clamp(36px, 5.2vw, 58px); line-height: 1.04; font-weight: 630; letter-spacing: -.055em; }
+    .intro-copy { max-width: 265px; margin: 0 4px 5px 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr); gap: 18px; align-items: stretch; }
+    .status-card { min-height: 320px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 27px 30px 25px; border-radius: var(--radius); background: var(--deep); color: white; }
+    .status-card::after { content: ""; position: absolute; width: 340px; height: 340px; border: 1px solid rgba(181,240,138,.13); border-radius: 50%; right: -100px; top: -115px; box-shadow: 0 0 0 28px rgba(181,240,138,.025), 0 0 0 58px rgba(181,240,138,.02); pointer-events: none; }
+    .status-card.peak { background: #352d27; }
+    .status-top, .status-bottom { position: relative; z-index: 1; }
+    .status-kicker { color: #bbd7c1; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .status-card.peak .status-kicker { color: #f0c5a7; }
+    .status-name { display: flex; align-items: center; gap: 12px; margin-top: 25px; }
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 6px rgba(181,240,138,.12); }
+    .peak .status-dot { background: #eea176; box-shadow: 0 0 0 6px rgba(238,161,118,.14); }
+    .status-name h2 { margin: 0; font-size: clamp(38px, 5vw, 54px); line-height: 1; font-weight: 560; letter-spacing: -.055em; }
+    .status-detail { max-width: 440px; min-height: 23px; margin: 18px 0 0; color: #d3e0d5; font-size: 14px; line-height: 1.6; }
+    .peak .status-detail { color: #ead8ca; }
+    .status-bottom { display: flex; justify-content: space-between; align-items: end; gap: 14px; border-top: 1px solid rgba(255,255,255,.16); padding-top: 17px; }
+    .status-time-label, .status-next-label { display: block; margin-bottom: 6px; color: #b7c9bc; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
+    .peak .status-time-label, .peak .status-next-label { color: #d9b9a6; }
+    .status-time, .status-next { font-size: 13px; font-weight: 600; }
+    .status-next { text-align: right; }
+    .control-card { padding: 26px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--white); }
+    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .section-heading h2 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
+    .plain-btn { border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; background: transparent; color: #47534a; cursor: pointer; font-size: 11px; font-weight: 650; transition: background .15s, border-color .15s; }
+    .plain-btn:hover { background: #f5f8f3; border-color: #cad8ca; }
+    .control-intro { margin: 8px 0 22px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field { min-width: 0; }
+    .field.full { grid-column: 1 / -1; }
+    label.field-label { display: block; margin: 0 0 7px; color: #58635b; font-size: 11px; font-weight: 650; }
+    .field input, .field select { width: 100%; height: 42px; padding: 0 11px; border: 1px solid #dfe5dd; border-radius: 9px; background: white; outline: none; font-size: 12px; }
+    .field input:focus, .field select:focus { border-color: #76ad78; box-shadow: 0 0 0 3px #e4f1df; }
+    .moment-meta { min-height: 19px; margin: 12px 0 0; color: var(--muted); font-size: 11px; }
+    .holiday-note { display: none; margin: 13px 0 0; padding: 11px 12px; border-radius: 9px; background: #f5f6f2; color: #59635c; font-size: 11px; line-height: 1.5; }
+    .holiday-note.visible { display: block; }
+    .holiday-note label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .holiday-note input { margin: 1px 0 0; accent-color: var(--deep); }
+    .rates { margin-top: 28px; padding: 26px 28px 25px; border: 1px solid var(--line); border-radius: var(--radius); background: white; }
+    .rates-top { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 17px; }
+    .rates-title h2 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.035em; }
+    .rates-title p { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .model-picker { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: #f7f8f5; }
+    .model-picker button { min-height: 34px; padding: 0 13px; border: 0; border-radius: 7px; background: transparent; color: #68726a; cursor: pointer; font-size: 11px; font-weight: 650; }
+    .model-picker button[aria-pressed="true"] { background: white; color: var(--ink); box-shadow: 0 1px 3px rgba(23,32,27,.12); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { padding: 11px 14px; color: #778078; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    th:first-child, td:first-child { padding-left: 0; }
+    th:last-child, td:last-child { padding-right: 0; }
+    th.rate-current { color: var(--green-dark); }
+    td { padding: 15px 14px; border-top: 1px solid #edf0ec; font-size: 13px; }
+    td:first-child { color: #546057; font-size: 12px; }
+    td.amount { font-variant-numeric: tabular-nums; font-weight: 620; }
+    td.current { color: var(--green-dark); background: #f5faef; }
+    tr td.current:first-of-type { border-radius: 8px 0 0 8px; }
+    tr td.current:last-child { border-radius: 0 8px 8px 0; }
+    .rate-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 17px; }
+    .saving-callout { margin: 0; color: #445148; font-size: 12px; line-height: 1.55; }
+    .saving-callout strong { color: var(--green-dark); }
+    .per-million { flex: none; color: #7c857e; font-size: 10px; }
+    .schedule { margin-top: 18px; padding: 21px 26px; border: 1px solid var(--line); border-radius: var(--radius); background: #fbfcfa; }
+    .schedule-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+    .schedule-head h2 { margin: 0; font-size: 14px; font-weight: 650; }
+    .utc-label { color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; }
+    .timeline { position: relative; height: 18px; overflow: hidden; border-radius: 5px; background: #e8eee7; }
+    .timeline .peak-band { position: absolute; top: 0; bottom: 0; background: #e4a27f; }
+    .timeline .peak-one { left: 4.1667%; width: 12.5%; }
+    .timeline .peak-two { left: 25%; width: 16.6667%; }
+    .timeline-labels { position: relative; display: flex; justify-content: space-between; margin-top: 7px; color: #818b83; font-size: 9px; font-variant-numeric: tabular-nums; }
+    .schedule-key { display: flex; gap: 17px; margin-top: 15px; color: #667168; font-size: 10px; }
+    .key-item { display: flex; align-items: center; gap: 6px; }
+    .key-swatch { width: 8px; height: 8px; border-radius: 2px; background: #e4a27f; }
+    .key-swatch.off { background: #dfe9db; }
+    .footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; padding-top: 22px; color: #828b84; font-size: 10px; line-height: 1.6; }
+    .footer p { margin: 0; }
+    .footer a { color: #52644f; text-underline-offset: 2px; }
+    .error { color: #a14b32 !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      .status-card { min-height: 280px; }
+      .control-card { min-height: 0; }
+      .intro { padding-top: 42px; }
+    }
+    @media (max-width: 560px) {
+      .shell { padding: 0 17px 35px; }
+      .topbar { height: 64px; }
+      .brand { gap: 8px; font-size: 10px; }
+      .live-label { font-size: 9px; }
+      .intro { display: block; padding: 38px 0 25px; }
+      h1 { max-width: 360px; font-size: 42px; }
+      .intro-copy { max-width: 340px; margin-top: 15px; font-size: 13px; }
+      .status-card { min-height: 285px; padding: 23px 21px 21px; }
+      .status-name { margin-top: 21px; }
+      .status-name h2 { font-size: 46px; }
+      .status-bottom { align-items: start; }
+      .status-next { max-width: 150px; }
+      .control-card { padding: 22px 19px; }
+      .rates { padding: 21px 18px; }
+      .rates-top { align-items: start; flex-direction: column; }
+      .model-picker { align-self: stretch; }
+      .model-picker button { flex: 1; }
+      th { padding: 10px 9px; font-size: 9px; }
+      td { padding: 13px 9px; font-size: 12px; }
+      td:first-child { font-size: 11px; }
+      .rate-foot { align-items: start; flex-direction: column; gap: 7px; }
+      .schedule { padding: 18px 17px; }
+      .footer { padding: 18px 2px 0; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+<link rel="icon" href="/s/deepseek-price-window-handoff/favicon.svg?v=7f2f0da40c3b" type="image/svg+xml"/></head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="mark" aria-hidden="true">D.</span><span>DeepSeek price window</span></div>
+      <div class="live-label"><span class="live-dot" aria-hidden="true"></span><span id="liveLabel">Live · current time</span></div>
+    </header>
+
+    <section class="intro" aria-labelledby="pageTitle">
+      <div>
+        <p class="eyebrow">A clearer moment to send</p>
+        <h1 id="pageTitle">Is now the cheaper window?</h1>
+      </div>
+      <p class="intro-copy">Check DeepSeek’s current API rate window, or look ahead to a specific date and time.</p>
+    </section>
+
+    <section class="layout" aria-label="Rate status and time selection">
+      <article class="status-card" id="statusCard" aria-live="polite">
+        <div class="status-top">
+          <div class="status-kicker" id="statusKicker">Current rate window</div>
+          <div class="status-name"><span class="status-dot" aria-hidden="true"></span><h2 id="statusName">Off-peak</h2></div>
+          <p class="status-detail" id="statusDetail">Your token rates are 50% lower than peak pricing.</p>
+        </div>
+        <div class="status-bottom">
+          <div><span class="status-time-label" id="momentLabel">Right now · Europe/Paris</span><span class="status-time" id="momentTime">—</span></div>
+          <div><span class="status-next-label" id="nextLabel">Next rate change</span><span class="status-next" id="nextChange">—</span></div>
+        </div>
+      </article>
+
+      <section class="control-card" aria-labelledby="checkHeading">
+        <div class="section-heading">
+          <h2 id="checkHeading">Check a moment</h2>
+          <button class="plain-btn" id="nowButton" type="button">Use now</button>
+        </div>
+        <p class="control-intro">Enter a local date and time. We’ll convert it to UTC, where DeepSeek sets its peak windows.</p>
+        <div class="field-grid">
+          <div class="field">
+            <label class="field-label" for="dateInput">Date</label>
+            <input id="dateInput" type="date" required=""/>
+          </div>
+          <div class="field">
+            <label class="field-label" for="timeInput">Time</label>
+            <input id="timeInput" type="time" required=""/>
+          </div>
+          <div class="field full">
+            <label class="field-label" for="zoneInput">Timezone</label>
+            <select id="zoneInput" aria-label="Timezone"></select>
+          </div>
+        </div>
+        <p class="moment-meta" id="momentMeta" aria-live="polite"></p>
+        <div class="holiday-note" id="holidayNote"></div>
+      </section>
+    </section>
+
+    <section class="rates" aria-labelledby="ratesHeading">
+      <div class="rates-top">
+        <div class="rates-title">
+          <h2 id="ratesHeading">Your token prices</h2>
+          <p id="modelCaption">deepseek-flash · USD per 1M tokens</p>
+        </div>
+        <div class="model-picker" role="group" aria-label="Choose DeepSeek model">
+          <button type="button" data-model="flash" aria-pressed="true">Flash</button>
+          <button type="button" data-model="pro" aria-pressed="false">V4 Pro</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Token type</th><th scope="col" id="peakHead">Peak</th><th scope="col" id="offHead">Off-peak</th></tr></thead>
+          <tbody id="priceRows"></tbody>
+        </table>
+      </div>
+      <div class="rate-foot">
+        <p class="saving-callout" id="savingCallout">Off-peak rates are half price.</p>
+        <span class="per-million">USD · per 1M tokens</span>
+      </div>
+    </section>
+
+    <section class="schedule" aria-labelledby="scheduleHeading">
+      <div class="schedule-head"><h2 id="scheduleHeading">Peak windows, every weekday</h2><span class="utc-label">UTC · Monday–Friday</span></div>
+      <div class="timeline" role="img" aria-label="Peak windows are 01:00 to 04:00 and 06:00 to 10:00 UTC. All other hours are off-peak.">
+        <span class="peak-band peak-one"></span><span class="peak-band peak-two"></span>
+      </div>
+      <div class="timeline-labels" aria-hidden="true"><span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span><span>24</span></div>
+      <div class="schedule-key"><span class="key-item"><span class="key-swatch" aria-hidden="true"></span>Peak</span><span class="key-item"><span class="key-swatch off" aria-hidden="true"></span>Off-peak</span></div>
+    </section>
+
+    <footer class="footer">
+      <p>Pricing and hours can change. Holiday dates are built in for 2026; for other years, mark Chinese public holidays manually.</p>
+      <p>Sources: <a href="https://api-docs.deepseek.com/quick_start/pricing/" rel="noreferrer" target="_blank">DeepSeek pricing</a> · <a href="https://english.beijing.gov.cn/workinginbeijing/laborrights/publicholidays/" rel="noreferrer" target="_blank">2026 Chinese public holidays</a></p>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      const PRICES = {
+        flash: { name: "deepseek-flash", peak: [0.006, 0.3, 1.2], off: [0.003, 0.15, 0.6] },
+        pro: { name: "deepseek-v4-pro", peak: [0.044, 1.32, 3.96], off: [0.022, 0.66, 1.98] }
+      };
+      const TOKENS = ["Input · cache hit", "Input · cache miss", "Output"];
+      const HOLIDAYS_2026 = new Set([
+        "2026-01-01", "2026-01-02", "2026-01-03",
+        "2026-02-15", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22", "2026-02-23",
+        "2026-04-04", "2026-04-05", "2026-04-06",
+        "2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05",
+        "2026-06-19", "2026-06-20", "2026-06-21",
+        "2026-09-25", "2026-09-26", "2026-09-27",
+        "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07"
+      ]);
+      const dateInput = document.getElementById("dateInput");
+      const timeInput = document.getElementById("timeInput");
+      const zoneInput = document.getElementById("zoneInput");
+      const holidayNote = document.getElementById("holidayNote");
+      const momentMeta = document.getElementById("momentMeta");
+      let selectedModel = "flash";
+      let followNow = true;
+      let manualHoliday = false;
+      let manualHolidayDate = "";
+      let manualHolidayZone = "";
+      let holidayInputKey = "";
+
+      const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const commonZones = [localZone, "UTC", "Europe/Paris", "Europe/London", "America/Los_Angeles", "America/Denver", "America/Chicago", "America/New_York", "America/Sao_Paulo", "Asia/Dubai", "Asia/Singapore", "Asia/Shanghai", "Asia/Tokyo", "Australia/Sydney"];
+      const allZones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : commonZones;
+      const zones = [...new Set([...commonZones, ...allZones])];
+      zones.forEach((zone) => {
+        const option = document.createElement("option");
+        option.value = zone;
+        option.textContent = zone === localZone ? `${zone} · your device` : zone;
+        zoneInput.append(option);
+      });
+      zoneInput.value = localZone;
+
+      function pad(value) { return String(value).padStart(2, "0"); }
+      function localParts(date, zone) {
+        const parts = new Intl.DateTimeFormat("en-GB", {
+          timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23"
+        }).formatToParts(date);
+        return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]));
+      }
+      function localInputs(date, zone) {
+        const p = localParts(date, zone);
+        return { date: `${p.year}-${pad(p.month)}-${pad(p.day)}`, time: `${pad(p.hour)}:${pad(p.minute)}` };
+      }
+      function setInputsFromNow() {
+        const values = localInputs(new Date(), zoneInput.value);
+        dateInput.value = values.date;
+        timeInput.value = values.time;
+      }
+      function offsetAt(date, zone) {
+        const p = localParts(date, zone);
+        const localAsUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+        return localAsUtc - date.getTime();
+      }
+      function sameLocal(p, y, mo, d, h, mi) {
+        return p.year === y && p.month === mo && p.day === d && p.hour === h && p.minute === mi;
+      }
+      function parseWallTime(dateText, timeText, zone) {
+        if (!dateText || !timeText) return { error: "Choose both a date and time." };
+        const [year, month, day] = dateText.split("-").map(Number);
+        const [hour, minute] = timeText.split(":").map(Number);
+        const wallAsUtc = Date.UTC(year, month - 1, day, hour, minute);
+        const offsets = new Set([
+          offsetAt(new Date(wallAsUtc - 36 * 3600000), zone),
+          offsetAt(new Date(wallAsUtc), zone),
+          offsetAt(new Date(wallAsUtc + 36 * 3600000), zone)
+        ]);
+        const matches = [...offsets].map((offset) => new Date(wallAsUtc - offset))
+          .filter((instant) => sameLocal(localParts(instant, zone), year, month, day, hour, minute))
+          .sort((a, b) => a - b);
+        if (!matches.length) return { error: "This local time does not exist because the clocks change. Choose another time." };
+        return { instant: matches[0], ambiguous: matches.length > 1 };
+      }
+      function isoDate(parts) {
+        return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+      }
+      function chinaDate(instant) {
+        return isoDate(localParts(instant, "Asia/Shanghai"));
+      }
+      function holidayFor(instant, zone) {
+        const isMarkedLocalDay = manualHoliday && zone === manualHolidayZone && isoDate(localParts(instant, zone)) === manualHolidayDate;
+        return HOLIDAYS_2026.has(chinaDate(instant)) || isMarkedLocalDay;
+      }
+      function isPeak(instant, zone) {
+        if (holidayFor(instant, zone)) return false;
+        const day = instant.getUTCDay();
+        if (day === 0 || day === 6) return false;
+        const minute = instant.getUTCHours() * 60 + instant.getUTCMinutes();
+        return (minute >= 60 && minute < 240) || (minute >= 360 && minute < 600);
+      }
+      function formatUsd(value) {
+        return "$" + value.toLocaleString("en-US", { minimumFractionDigits: value < 0.01 ? 3 : 2, maximumFractionDigits: 3 });
+      }
+      function formatLong(date, zone) {
+        return new Intl.DateTimeFormat(undefined, { timeZone: zone, weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" }).format(date);
+      }
+      function formatUtc(date) {
+        return new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date) + " UTC";
+      }
+      function durationText(ms) {
+        const total = Math.max(0, Math.floor(ms / 60000));
+        const days = Math.floor(total / 1440);
+        const hours = Math.floor((total % 1440) / 60);
+        const minutes = total % 60;
+        if (days) return `${days}d ${hours}h`;
+        if (hours) return `${hours}h ${minutes}m`;
+        return `${minutes}m`;
+      }
+      function nextTransition(from, state, zone) {
+        const start = Math.floor(from.getTime() / 60000) * 60000 + 60000;
+        for (let n = 0; n < 8 * 24 * 60; n++) {
+          const candidate = new Date(start + n * 60000);
+          if (isPeak(candidate, zone) !== state) return candidate;
+        }
+        return null;
+      }
+      function setHolidayNote(instant, dateText, zone) {
+        const holidayDate = chinaDate(instant);
+        const year = Number(holidayDate.slice(0, 4));
+        const knownHoliday = HOLIDAYS_2026.has(holidayDate);
+        const key = `${dateText}|${zone}`;
+        if (key !== holidayInputKey) {
+          manualHoliday = false;
+          manualHolidayDate = "";
+          manualHolidayZone = "";
+          holidayInputKey = key;
+        }
+        if (year === 2026) {
+          if (knownHoliday) {
+            holidayNote.innerHTML = "<strong>Chinese public holiday</strong> · DeepSeek rates are off-peak all day. Dates follow the published 2026 holiday calendar.";
+            holidayNote.classList.add("visible");
+          } else {
+            holidayNote.innerHTML = "2026 Chinese public holiday dates are included automatically.";
+            holidayNote.classList.add("visible");
+          }
+        } else {
+          holidayNote.innerHTML = `<label><input id="holidayToggle" type="checkbox" ${manualHoliday ? "checked" : ""}><span>Treat this as a Chinese public holiday. DeepSeek applies off-peak rates for the full holiday.</span></label>`;
+          holidayNote.classList.add("visible");
+          holidayNote.querySelector("#holidayToggle").addEventListener("change", (event) => {
+            manualHoliday = event.target.checked;
+            manualHolidayDate = dateText;
+            manualHolidayZone = zone;
+            render();
+          });
+        }
+      }
+      function renderPrices(peak) {
+        const data = PRICES[selectedModel];
+        document.getElementById("modelCaption").textContent = `${data.name} · USD per 1M tokens`;
+        document.getElementById("peakHead").classList.toggle("rate-current", peak);
+        document.getElementById("offHead").classList.toggle("rate-current", !peak);
+        document.getElementById("peakHead").textContent = peak ? "Peak · now" : "Peak";
+        document.getElementById("offHead").textContent = peak ? "Off-peak" : "Off-peak · now";
+        document.getElementById("priceRows").innerHTML = TOKENS.map((label, index) => {
+          const peakClass = peak ? "current" : "";
+          const offClass = peak ? "" : "current";
+          return `<tr><td>${label}</td><td class="amount ${peakClass}">${formatUsd(data.peak[index])}</td><td class="amount ${offClass}">${formatUsd(data.off[index])}</td></tr>`;
+        }).join("");
+        const outputSave = data.peak[2] - data.off[2];
+        document.getElementById("savingCallout").innerHTML = peak
+          ? `Off-peak rates are <strong>50% lower</strong> — ${formatUsd(outputSave)} less per 1M output tokens on this model.`
+          : `You’re already at <strong>half the peak rate</strong> — ${formatUsd(outputSave)} saved per 1M output tokens on this model.`;
+      }
+      function render() {
+        const zone = zoneInput.value;
+        let parsed;
+        try { parsed = parseWallTime(dateInput.value, timeInput.value, zone); }
+        catch { parsed = { error: "Choose a valid timezone." }; }
+        if (parsed.error) {
+          momentMeta.textContent = parsed.error;
+          momentMeta.classList.add("error");
+          document.getElementById("statusDetail").textContent = "Choose a valid local date and time to check the rate window.";
+          document.getElementById("nextChange").textContent = "—";
+          document.getElementById("momentTime").textContent = "—";
+          return;
+        }
+        momentMeta.classList.remove("error");
+        const instant = parsed.instant;
+        setHolidayNote(instant, dateInput.value, zone);
+        const peak = isPeak(instant, zone);
+        const utcDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long" }).format(instant);
+        const holiday = holidayFor(instant, zone);
+        const isKnownYear = Number(chinaDate(instant).slice(0, 4)) === 2026;
+        const statusCard = document.getElementById("statusCard");
+        statusCard.classList.toggle("peak", peak);
+        document.getElementById("statusKicker").textContent = followNow ? "Current rate window" : "Selected rate window";
+        document.getElementById("statusName").textContent = peak ? "Peak" : "Off-peak";
+        let detail;
+        if (holiday) detail = "Chinese public holiday · DeepSeek applies off-peak rates for the full day.";
+        else if (peak) detail = isKnownYear ? "Peak pricing is active. Off-peak rates are 50% lower." : "A weekday peak window is active, assuming this isn’t a Chinese public holiday.";
+        else if ([0, 6].includes(instant.getUTCDay())) detail = "Weekend in UTC · DeepSeek uses off-peak rates all weekend.";
+        else detail = isKnownYear ? "Outside the weekday peak windows · your token rates are 50% lower." : "Outside a peak window · your rates are 50% lower, assuming this isn’t a Chinese public holiday.";
+        document.getElementById("statusDetail").textContent = detail;
+        document.getElementById("momentLabel").textContent = `${followNow ? "Right now" : "Selected time"} · ${zone}`;
+        document.getElementById("momentTime").textContent = formatLong(instant, zone);
+        const next = nextTransition(instant, peak, zone);
+        document.getElementById("nextLabel").textContent = peak ? "Off-peak starts" : "Peak starts";
+        document.getElementById("nextChange").textContent = next ? `${durationText(next - instant)} · ${formatUtc(next)}` : "No change found";
+        momentMeta.textContent = parsed.ambiguous
+          ? `${formatUtc(instant)} · This local time occurs twice; using the earlier occurrence.`
+          : `${formatUtc(instant)} · ${utcDay} in UTC`;
+        document.getElementById("liveLabel").textContent = followNow ? "Live · current time" : "Custom time";
+        renderPrices(peak);
+      }
+      function useNow() {
+        followNow = true;
+        manualHoliday = false;
+        setInputsFromNow();
+        render();
+      }
+      document.getElementById("nowButton").addEventListener("click", useNow);
+      [dateInput, timeInput].forEach((input) => input.addEventListener("input", () => { followNow = false; render(); }));
+      zoneInput.addEventListener("change", () => {
+        if (followNow) setInputsFromNow();
+        render();
+      });
+      document.querySelectorAll("[data-model]").forEach((button) => button.addEventListener("click", () => {
+        selectedModel = button.dataset.model;
+        document.querySelectorAll("[data-model]").forEach((item) => item.setAttribute("aria-pressed", String(item === button)));
+        render();
+      }));
+      setInputsFromNow();
+      render();
+      setInterval(() => {
+        if (followNow) {
+          const values = localInputs(new Date(), zoneInput.value);
+          if (values.date !== dateInput.value || values.time !== timeInput.value) {
+            dateInput.value = values.date;
+            timeInput.value = values.time;
+            render();
+          }
+        }
+      }, 15000);
+    })();
+  </script>
+
+
+</body></html>

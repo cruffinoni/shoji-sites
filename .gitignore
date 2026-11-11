@@ -1,0 +1,9 @@
+# shoji runtime scratch directories
+.staged-*/
+.trash-*/
+.backup-*/
+
+# defensive: the database belongs beside this repository, never inside it
+*.db
+*.db-wal
+*.db-shm
