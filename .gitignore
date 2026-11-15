@@ -3,6 +3,9 @@
 .trash-*/
 .backup-*/
 
+# browser-test captures; design mockups are local-only
+design/
+
 # defensive: the database belongs beside this repository, never inside it
 *.db
 *.db-wal

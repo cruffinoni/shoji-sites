@@ -1,0 +1,152 @@
+<!DOCTYPE html><html lang="en"><head><!-- This page is rendered by shoji. Edit metadata.json instead of the page head. -->
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="theme-color" content="#f6f0e3"/>
+<meta name="description" content="Pin the days you can&#39;t move, mark days you can&#39;t train, generate every valid weekly workout schedule, and compare them by recovery."/>
+<title>Weekform — Workout Schedule Generator</title>
+
+<link rel="stylesheet" href="styles.css"/>
+<script src="logic.js" defer=""></script>
+<script src="app.js" defer=""></script>
+<link rel="icon" href="/s/workout-schedule-generator/favicon.svg?v=41952f0831db" type="image/svg+xml"/></head>
+<body>
+<a class="skip" href="#results">Skip to schedules</a>
+
+<header class="top">
+  <div class="wrap">
+    <a aria-label="Weekform home" class="brand" href="./">
+      <span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      WEEKFORM
+    </a>
+    <button class="method-btn" id="methodToggle" type="button" aria-expanded="false" aria-controls="methodPanel">
+      How ranking works
+      <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="m2.5 4 3 3 3-3"></path></svg>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="intro" aria-labelledby="pageTitle">
+    <h1 id="pageTitle">Build a week that can breathe.</h1>
+    <p>Pick a frequency. Pin must-train days. Forbid impossible days.</p>
+  </section>
+
+  <section class="method-panel" id="methodPanel" aria-label="How schedules are ranked" hidden="">
+    <ol>
+      <li>Every valid seven-day week is generated, including plans with tighter spacing.</li>
+      <li>Weeks are ordered by the fewest adjacent workout pairs, then by the most even rest gaps.</li>
+      <li>Sunday and Monday count as neighbours. Unavailable days stay in the week as rest.</li>
+    </ol>
+    <p>Adjacent means a workout on two consecutive days. Nothing is filtered out.</p>
+  </section>
+
+  <section class="controls" aria-label="Plan settings">
+    <fieldset class="sessions">
+      <legend>Sessions<span class="sr-only"> per week</span></legend>
+      <div class="freq" id="sessionsGroup">
+        <input type="radio" id="s1" name="sessions" value="1"/><label for="s1" aria-label="1 session per week">1</label>
+        <input type="radio" id="s2" name="sessions" value="2"/><label for="s2" aria-label="2 sessions per week">2</label>
+        <input type="radio" id="s3" name="sessions" value="3"/><label for="s3" aria-label="3 sessions per week">3</label>
+        <input type="radio" id="s4" name="sessions" value="4"/><label for="s4" aria-label="4 sessions per week">4</label>
+        <input type="radio" id="s5" name="sessions" value="5"/><label for="s5" aria-label="5 sessions per week">5</label>
+        <input type="radio" id="s6" name="sessions" value="6"/><label for="s6" aria-label="6 sessions per week">6</label>
+        <input type="radio" id="s7" name="sessions" value="7"/><label for="s7" aria-label="7 sessions per week">7</label>
+      </div>
+    </fieldset>
+
+    <div class="fixed-field">
+      <div class="c-label">
+        <h2 id="fixedHeading">Days</h2>
+        <div class="mode-group" role="group" aria-label="Day constraint mode">
+          <button class="mode" type="button" data-mode="fixed" aria-pressed="true" aria-label="Pin days as must-train">Pin</button>
+          <button class="mode" type="button" data-mode="forbidden" aria-pressed="false" aria-label="Forbid days from workouts">Forbid</button>
+        </div>
+      </div>
+      <div class="days" id="daysGroup" role="group" aria-labelledby="fixedHeading">
+        <button class="day" type="button" data-day="0" data-state="available" aria-pressed="false" aria-label="Monday, available. Pin as a workout day."><span>MON</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="1" data-state="available" aria-pressed="false" aria-label="Tuesday, available. Pin as a workout day."><span>TUE</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="2" data-state="available" aria-pressed="false" aria-label="Wednesday, available. Pin as a workout day."><span>WED</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="3" data-state="available" aria-pressed="false" aria-label="Thursday, available. Pin as a workout day."><span>THU</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="4" data-state="available" aria-pressed="false" aria-label="Friday, available. Pin as a workout day."><span>FRI</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="5" data-state="available" aria-pressed="false" aria-label="Saturday, available. Pin as a workout day."><span>SAT</span><span class="dot" aria-hidden="true"></span></button>
+        <button class="day" type="button" data-day="6" data-state="fixed" aria-pressed="true" aria-label="Sunday, pinned workout day. Remove constraint."><span>SUN</span><span class="dot" aria-hidden="true"></span></button>
+      </div>
+    </div>
+
+    <button class="clear" id="clearFixed" type="button" aria-label="Clear all pinned and unavailable days">Clear</button>
+  </section>
+
+  <div class="workspace" id="workspace">
+    <section class="results" id="results" tabindex="-1" aria-labelledby="resultsTitle">
+      <div class="results-head">
+        <div>
+          <h2 class="results-title" id="resultsTitle"><span id="totalCount">15</span> <span id="countWord">weeks</span></h2>
+          <p class="results-meta" id="resultsMeta"><b>3</b> full recovery · <b>12</b> tighter spacing</p>
+        </div>
+        <p class="sort"><b>Ranked by recovery</b></p>
+      </div>
+
+      <div class="limit-note" id="limitNote" role="note" hidden="">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle cx="7" cy="7" r="5.5"></circle><path d="M7 6.2v3.2M7 4.2v.6"></path></svg>
+        <p id="limitText"></p>
+      </div>
+
+      <div class="legend" id="legend" aria-hidden="true">
+        <span><i class="key workout"></i>Workout</span>
+        <span><i class="key pinned"></i>Pinned</span>
+        <span><i class="key rest"></i>Rest</span>
+        <span><i class="key forbidden"></i>Unavailable</span>
+      </div>
+
+      <div class="table-head" id="tableHead" aria-hidden="true">
+        <span>#</span>
+        <span class="week-head"><span data-day="0">MON</span><span data-day="1">TUE</span><span data-day="2">WED</span><span data-day="3">THU</span><span data-day="4">FRI</span><span data-day="5">SAT</span><span data-day="6">SUN</span></span>
+        <span class="r">Recovery</span>
+        <span></span>
+      </div>
+
+      <ol class="plan-list" id="planList" aria-label="Matching weekly schedules"></ol>
+
+      <div class="empty" id="emptyState" hidden="">
+        <svg class="empty-mark" viewBox="0 0 42 42" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="21" cy="21" r="14"></circle><path d="M8 34 34 8"></path></svg>
+        <h3>No week can satisfy these constraints.</h3>
+        <p id="emptyText">You’ve pinned more days than the session count allows. Lower the session count or unpin a day.</p>
+        <div class="empty-actions">
+          <button type="button" id="fixSessions">Use 4 sessions</button>
+          <button type="button" id="emptySecondary">Clear constraints</button>
+        </div>
+      </div>
+
+      <div class="foot" id="foot"><span id="retained">All 15 valid weeks shown.</span></div>
+    </section>
+
+    <aside class="inspector" id="inspector" aria-labelledby="selectedDaysLabel" hidden="">
+      <div class="ins-top"><span>Selected week</span><span class="num" id="inspectorRank">01 / 15</span></div>
+      <button class="ring-toggle" id="ringToggle" type="button" aria-expanded="false" aria-controls="ringWrap">
+        <span id="ringToggleLabel">Show recovery ring</span>
+        <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="m2.5 4 3 3 3-3"></path></svg>
+      </button>
+      <div class="ring-wrap" id="ringWrap">
+        <div class="ring-center" aria-hidden="true"><span class="big" id="ringCount">3</span><span class="lbl">sessions</span></div>
+      </div>
+      <div class="ins-divider"></div>
+      <span class="ins-badge" id="inspectorBadge"><i aria-hidden="true" class="b"></i><span id="inspectorBadgeText">Full recovery</span></span>
+      <h2 class="ins-days" id="selectedDaysLabel" aria-label="Workouts Tuesday, Thursday and Sunday">Tue · Thu · Sun</h2>
+      <dl class="ins-stats">
+        <div><dt>Rest gaps</dt><dd id="inspectorGaps">1 · 2 · 1 days</dd></div>
+        <div><dt>Pinned</dt><dd id="inspectorPinned"><i aria-hidden="true" class="pin-dot"></i>Sunday</dd></div>
+        <div class="wide" id="inspectorForbiddenWrap" hidden=""><dt>Unavailable</dt><dd id="inspectorForbidden"></dd></div>
+      </dl>
+      <button class="copy" id="copyBtn" type="button">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"></rect><path d="M8 4V2.5a1 1 0 0 0-1-1H2.5a1 1 0 0 0-1 1V7a1 1 0 0 0 1 1H4"></path></svg>
+        <span id="copyLabel">Copy this week</span>
+      </button>
+      <p class="ins-note">Week loops · Sun → Mon</p>
+    </aside>
+  </div>
+</main>
+
+<p class="sr-only" id="liveStatus" role="status" aria-live="polite"></p>
+<noscript><p class="wrap">This planner needs JavaScript to generate and compare schedules.</p></noscript>
+
+</body></html>
