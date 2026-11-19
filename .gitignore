@@ -10,3 +10,6 @@ design/
 *.db
 *.db-wal
 *.db-shm
+
+# Impeccable workspace files
+.impeccable/
