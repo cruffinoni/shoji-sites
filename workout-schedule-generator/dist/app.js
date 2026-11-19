@@ -6,6 +6,7 @@
   if (!W) return;
 
   var DAYS = W.DAYS;
+  var PAGE_SIZE = 40;
   var DAY_KEYS = DAYS.map(function (d) { return d.key; });
   var DEFAULT_SESSIONS = 3;
   var DEFAULT_FIXED = [6];
@@ -15,8 +16,10 @@
     sessions: DEFAULT_SESSIONS,
     fixed: new Set(DEFAULT_FIXED),
     forbidden: new Set(),
-    mode: 'fixed',
-    selectedMask: null
+    rest: new Set(),
+    sportCounts: { gym: DEFAULT_SESSIONS },
+    page: 1,
+    selectedId: null
   };
   var data = null;
   var copyTimer = null;
@@ -25,7 +28,6 @@
   var els = {
     methodToggle: document.getElementById('methodToggle'),
     methodPanel: document.getElementById('methodPanel'),
-    sessionsGroup: document.getElementById('sessionsGroup'),
     daysGroup: document.getElementById('daysGroup'),
     clearFixed: document.getElementById('clearFixed'),
     workspace: document.getElementById('workspace'),
@@ -41,7 +43,6 @@
     emptyText: document.getElementById('emptyText'),
     fixSessions: document.getElementById('fixSessions'),
     emptySecondary: document.getElementById('emptySecondary'),
-    modeButtons: document.querySelectorAll('.mode'),
     foot: document.getElementById('foot'),
     retained: document.getElementById('retained'),
     inspector: document.getElementById('inspector'),
@@ -96,50 +97,90 @@
 
   function getSelected() {
     if (!data || !data.schedules.length) return null;
-    return data.schedules.find(function (s) { return s.mask === state.selectedMask; }) || data.schedules[0];
+    return data.schedules.find(function (s) { return s.id === state.selectedId; }) || data.schedules[0];
   }
 
   function compute() {
+    state.sessions = allocatedSessions();
     data = W.generateSchedules({
       sessions: state.sessions,
       fixed: fixedDaysArray(),
+      rest: Array.from(state.rest),
+      sportCounts: state.sportCounts,
       forbidden: forbiddenDaysArray()
     });
-    var selected = data.schedules.find(function (s) { return s.mask === state.selectedMask; });
-    if (!selected) state.selectedMask = data.schedules.length ? data.schedules[0].mask : null;
+    var selected = data.schedules.find(function (s) { return s.id === state.selectedId; });
+    if (!selected) state.selectedId = data.schedules.length ? data.schedules[0].id : null;
+    state.page = selected ? Math.ceil(selected.rank / PAGE_SIZE) : 1;
+  }
+
+  var sportInputs = document.querySelectorAll('[data-sport-count]');
+  var allocation = document.getElementById('allocation');
+  var pager = document.getElementById('pager');
+  var pageInput = document.getElementById('pageNumber');
+  var previousPage = document.getElementById('previousPage');
+  var nextPage = document.getElementById('nextPage');
+
+  function gymOnly() {
+    return W.SPORTS.slice(1).every(function (sport) { return (state.sportCounts[sport.key] ?? 0) === 0; }) &&
+      state.sportCounts.gym === state.sessions;
+  }
+
+  function allocatedSessions() {
+    return Object.values(state.sportCounts).reduce(function (sum, count) { return sum + count; }, 0);
+  }
+
+  function suggestedTotal() {
+    var target = null;
+    if (gymOnly()) {
+      if (data.reason === 'too-many-fixed') target = state.fixed.size;
+      if (data.reason === 'not-enough-days') target = data.availableDays;
+    }
+    return target !== null && target >= Math.max(1, state.fixed.size) && target <= data.availableDays ? target : null;
+  }
+
+  function describeDay(schedule, day) {
+    var sport = W.SPORT_BY_KEY[schedule.sportByDay[day]];
+    if (sport) return sport.name + (schedule.fixedDays.includes(day) ? ' (pinned)' : '');
+    if (schedule.forbiddenDays.includes(day)) return 'Forbidden';
+    return schedule.restDays.includes(day) ? 'Mandatory rest' : 'Rest';
+  }
+
+  function describeWeek(schedule) {
+    return DAYS.map(function (day) { return day.name + ' ' + describeDay(schedule, day.index); }).join(', ');
+  }
+
+  var daySelectors = els.daysGroup.querySelectorAll('select');
+  var sportSteppers = document.querySelector('.sports').querySelectorAll('[data-step]');
+
+  function syncPlannerControls() {
+    daySelectors.forEach(function (select) {
+      var day = Number(select.dataset.day);
+      select.value = state.fixed.has(day) ? 'fixed' : state.rest.has(day) ? 'rest' :
+        state.forbidden.has(day) ? 'forbidden' : 'available';
+      select.dataset.state = select.value;
+    });
+    sportSteppers.forEach(function (button) {
+      var count = button.parentElement.querySelector('input').valueAsNumber;
+      var atLimit = button.dataset.step === '1' ? count >= 7 : count <= 0;
+      button.setAttribute('aria-disabled', String(atLimit));
+    });
   }
 
   function syncControls() {
-    for (var n = 1; n <= 7; n++) {
-      var input = document.getElementById('s' + n);
-      if (input) input.checked = (n === state.sessions);
-    }
-    els.modeButtons.forEach(function (button) {
-      button.setAttribute('aria-pressed', String(button.getAttribute('data-mode') === state.mode));
+    sportInputs.forEach(function (input) {
+      var count = state.sportCounts[input.dataset.sportCount] ?? 0;
+      if (document.activeElement !== input) input.value = Number.isNaN(count) ? '' : count;
     });
-    els.daysGroup.querySelectorAll('.day').forEach(function (button) {
-      var day = Number(button.getAttribute('data-day'));
-      var isFixed = state.fixed.has(day);
-      var isForbidden = state.forbidden.has(day);
-      var dayState = isFixed ? 'fixed' : isForbidden ? 'forbidden' : 'available';
-      var action;
-      if (dayState === state.mode) action = 'Press to clear.';
-      else if (dayState === 'fixed') action = 'Press to make unavailable.';
-      else if (dayState === 'forbidden') action = 'Press to pin as a workout day.';
-      else action = state.mode === 'fixed' ? 'Press to pin as a workout day.' : 'Press to make unavailable.';
-      var label = DAYS[day].name + ', ' +
-        (dayState === 'fixed' ? 'pinned workout day' : dayState === 'forbidden' ? 'unavailable for workouts' : 'available') +
-        '. ' + action;
-      button.setAttribute('data-state', dayState);
-      button.setAttribute('aria-pressed', String(dayState !== 'available'));
-      button.setAttribute('aria-label', label);
-      button.classList.toggle('on', dayState !== 'available');
-    });
+    allocation.dataset.state = data.reason === 'invalid-sessions' || data.reason === 'invalid-sport-counts' ? 'warning' : 'matched';
+    document.getElementById('assignedCount').textContent = Number.isFinite(state.sessions) ? state.sessions : '—';
+    syncPlannerControls();
     els.weekHeadDays.forEach(function (span) {
       var day = Number(span.getAttribute('data-day'));
+      span.classList.toggle('is-rest', state.rest.has(day));
       span.classList.toggle('is-forbidden', state.forbidden.has(day));
     });
-    els.clearFixed.disabled = state.fixed.size === 0 && state.forbidden.size === 0;
+    els.clearFixed.disabled = state.fixed.size === 0 && state.forbidden.size === 0 && state.rest.size === 0;
   }
 
   function adjacentFixedPairs() {
@@ -152,7 +193,7 @@
 
   function limitationText() {
     if (!data || data.total === 0) return '';
-    if (state.sessions === 7) return 'All seven days are workouts, so there is no rest day to place.';
+    if (state.sessions === 7) return 'All seven days are training days, so there is no rest day to place.';
 
     var pairs = adjacentFixedPairs();
     var adjacent = pairs.map(function (p) {
@@ -166,9 +207,9 @@
     }
     if (data.fullCount === 0) {
       if (data.maxIndependent < state.sessions) {
-        return 'At most ' + data.maxIndependent + ' sessions can be separated by a full rest day with these constraints. The closest plans have ' + count + '.';
+        return 'At most ' + data.maxIndependent + ' sessions can be separated with a training-free day between them. The closest plans have ' + count + '.';
       }
-      return 'These constraints leave no way to separate every session with a full rest day. The closest plans have ' + count + '.';
+      return 'These constraints leave no way to separate every session with a calendar day without training. The closest plans have ' + count + '.';
     }
     return '';
   }
@@ -181,7 +222,7 @@
       var tighter = total - data.fullCount;
       return '<b>' + data.fullCount + '</b> full recovery' + (tighter ? ' · <b>' + tighter + '</b> tighter spacing' : '');
     }
-    if (state.sessions === 7) return 'No rest days · 1 valid week';
+    if (state.sessions === 7) return 'No rest days';
     if (data.moreCount > 0) {
       return '<b>' + data.minimumCount + '</b> at the minimum · <b>' + data.moreCount + '</b> tighter spacing';
     }
@@ -189,25 +230,22 @@
   }
 
   function scheduleAria(schedule) {
-    var fixed = schedule.fixedDays.map(function (d) { return DAYS[d].name; });
-    var forbidden = schedule.forbiddenDays.map(function (d) { return DAYS[d].name; });
-    var workout = joinList(dayNames(schedule.days));
-    var gapWord = schedule.pairs === 1 ? 'pair' : 'pairs';
-    return 'Plan ' + schedule.rank + ' of ' + data.total + '. ' + schedule.tierLabel + '. Workouts ' + workout + '. ' +
-      schedule.pairs + ' adjacent ' + gapWord + '. Rest gaps ' + schedule.gaps.join(', ') + ' days.' +
-      (fixed.length ? ' Pinned: ' + joinList(fixed) + '.' : '') +
-      (forbidden.length ? ' Unavailable: ' + joinList(forbidden) + '.' : '');
+    return 'Plan ' + schedule.rank + ' of ' + data.total + '. ' + schedule.tierLabel + '. ' + describeWeek(schedule) + '.';
   }
 
   function rowMarkup(schedule) {
-    var selected = schedule.mask === state.selectedMask;
+    var selected = schedule.id === state.selectedId;
     var cells = '';
     for (var d = 0; d < 7; d++) {
-      var cls = state.forbidden.has(d) ? 'forbidden' : state.fixed.has(d) ? 'pinned' : (schedule.days.indexOf(d) !== -1 ? 'workout' : 'rest');
-      cells += '<span class="cell"><i class="mnode ' + cls + '"></i></span>';
+      var sport = W.SPORT_BY_KEY[schedule.sportByDay[d]];
+      var cls = sport ? (schedule.fixedDays.includes(d) ? ' pinned' : '') :
+        schedule.forbiddenDays.includes(d) ? 'forbidden' : schedule.restDays.includes(d) ? 'mandatory-rest' : 'rest';
+      var marker = sport ? '<span class="mnode sport-node' + cls + '" style="--sport:' + sport.color + '">' + sport.initial + '</span>' :
+        '<i class="mnode ' + cls + '"></i>';
+      cells += '<span class="cell">' + marker + '</span>';
     }
     return '<li>' +
-      '<button type="button" class="plan-row' + (selected ? ' selected' : '') + '" data-mask="' + schedule.mask + '" ' +
+      '<button type="button" class="plan-row' + (selected ? ' selected' : '') + '" data-id="' + schedule.id + '" ' +
       'aria-pressed="' + String(selected) + '" aria-controls="inspector" aria-label="' + scheduleAria(schedule).replace(/"/g, '&quot;') + '">' +
         '<span class="rank" aria-hidden="true">' + pad(schedule.rank) + '</span>' +
         '<span class="week" aria-hidden="true">' + cells + '</span>' +
@@ -218,7 +256,35 @@
   }
 
   function renderList() {
-    els.planList.innerHTML = data.schedules.map(rowMarkup).join('');
+    var start = (state.page - 1) * PAGE_SIZE;
+    els.planList.start = start + 1;
+    els.planList.innerHTML = data.schedules.slice(start, start + PAGE_SIZE).map(rowMarkup).join('');
+    var lastPage = Math.ceil(data.total / PAGE_SIZE);
+    pager.hidden = lastPage <= 1;
+    pageInput.max = lastPage;
+    pageInput.value = state.page;
+    previousPage.disabled = state.page === 1;
+    nextPage.disabled = state.page === lastPage;
+    document.getElementById('pageCount').textContent = 'of ' + lastPage;
+    els.retained.textContent = lastPage > 1
+      ? 'Weeks ' + (start + 1) + '–' + Math.min(start + PAGE_SIZE, data.total) + ' of ' + data.total + '.'
+      : 'All ' + data.total + ' valid ' + (data.total === 1 ? 'week' : 'weeks') + ' shown.';
+  }
+
+  function goToPage(page) {
+    var lastPage = Math.ceil(data.total / PAGE_SIZE);
+    if (!Number.isInteger(page) || page < 1 || page > lastPage) {
+      pageInput.value = state.page;
+      return;
+    }
+    els.workspace.appendChild(els.inspector);
+    state.page = page;
+    state.selectedId = data.schedules[(page - 1) * PAGE_SIZE].id;
+    renderList();
+    renderInspector();
+    placeInspector();
+    announce(els.retained.textContent);
+    els.planList.querySelector('.plan-row.selected').focus();
   }
 
   function appendText(parent, text, x, y, size, fill, family) {
@@ -256,14 +322,14 @@
     }
     circle(NR, '#e6ddcc', 1, 'none');
 
-    var workouts = schedule.days.slice();
-    if (workouts.length === 1) {
+    var trainingDays = schedule.days;
+    if (trainingDays.length === 1) {
       circle(AR, '#2e5a43', 2, 'none');
       appendText(svg, '6d', C, 20, 12, '#6f7568');
     } else {
-      for (var i = 0; i < workouts.length; i++) {
-        var a = workouts[i];
-        var b = workouts[(i + 1) % workouts.length];
+      for (var i = 0; i < trainingDays.length; i++) {
+        var a = trainingDays[i];
+        var b = trainingDays[(i + 1) % trainingDays.length];
         var span = (b - a + 7) % 7 || 7;
         var gap = span - 1;
         var start = -90 + a * step;
@@ -285,19 +351,17 @@
       }
     }
 
-    workouts.forEach(function (dayIndex) {
+    trainingDays.forEach(function (dayIndex) {
       var pos = pt(NR, -90 + dayIndex * step);
       var isPinned = state.fixed.has(dayIndex);
       var c = document.createElementNS(NS, 'circle');
       c.setAttribute('cx', pos[0].toFixed(2)); c.setAttribute('cy', pos[1].toFixed(2)); c.setAttribute('r', '23');
-      if (isPinned) {
-        c.setAttribute('fill', '#1d2a22'); c.setAttribute('stroke', '#1d2a22');
-      } else {
-        c.setAttribute('fill', '#2e5a43'); c.setAttribute('stroke', '#2e5a43');
-      }
-      c.setAttribute('stroke-width', '1');
+      var sport = W.SPORT_BY_KEY[schedule.sportByDay[dayIndex]];
+      c.setAttribute('fill', sport.color);
+      c.setAttribute('stroke', sport.color);
       svg.appendChild(c);
-      appendText(svg, DAYS[dayIndex].short, pos[0], pos[1], 13, '#fffbf2');
+      appendText(svg, DAYS[dayIndex].short, pos[0], pos[1] - 6, 11, '#fffbf2');
+      appendText(svg, sport.initial, pos[0], pos[1] + 8, 12, '#fffbf2');
       if (isPinned) {
         var notch = document.createElementNS(NS, 'circle');
         notch.setAttribute('cx', (pos[0] + 12).toFixed(2));
@@ -310,14 +374,20 @@
 
     var allDays = [0, 1, 2, 3, 4, 5, 6];
     allDays.forEach(function (dayIndex) {
-      if (workouts.indexOf(dayIndex) !== -1) return;
+      if (trainingDays.indexOf(dayIndex) !== -1) return;
       var pos = pt(NR, -90 + dayIndex * step);
       var isForbidden = state.forbidden.has(dayIndex);
+      var mandatory = state.rest.has(dayIndex);
       var c = document.createElementNS(NS, 'circle');
       c.setAttribute('cx', pos[0].toFixed(2)); c.setAttribute('cy', pos[1].toFixed(2)); c.setAttribute('r', '23');
-      c.setAttribute('fill', '#fffbf2'); c.setAttribute('stroke', isForbidden ? '#c9a28f' : '#d7cdbb');
+      c.setAttribute('fill', '#fffbf2'); c.setAttribute('stroke', isForbidden ? '#c9a28f' : mandatory ? '#2e5a43' : '#d7cdbb');
       c.setAttribute('stroke-width', '1');
       svg.appendChild(c);
+      if (mandatory) {
+        var outline = c.cloneNode();
+        outline.setAttribute('r', '19');
+        svg.appendChild(outline);
+      }
       if (isForbidden) {
         var slash = document.createElementNS(NS, 'line');
         slash.setAttribute('x1', (pos[0] - 7).toFixed(2)); slash.setAttribute('y1', (pos[1] + 7).toFixed(2));
@@ -333,16 +403,7 @@
   }
 
   function ringAlt(schedule) {
-    var forbidden = schedule.forbiddenDays || [];
-    var workout = joinList(dayNames(schedule.days));
-    var rest = [0,1,2,3,4,5,6].filter(function (d) {
-      return schedule.days.indexOf(d) === -1 && forbidden.indexOf(d) === -1;
-    });
-    var restText = rest.length ? joinList(dayNames(rest)) : 'none';
-    var gapText = schedule.count === 1 ? '6 rest days' : schedule.count === 7 ? 'no rest days' : 'rest gaps ' + schedule.gaps.join(', ') + ' days';
-    var pinText = schedule.fixedDays.length ? ' Pinned: ' + joinList(dayNames(schedule.fixedDays)) + '.' : '';
-    var forbiddenText = forbidden.length ? ' Unavailable: ' + joinList(dayNames(forbidden)) + '.' : '';
-    return 'Recovery ring. ' + schedule.count + ' sessions: ' + workout + '. Rest days: ' + restText + '. ' + gapText + '.' + pinText + forbiddenText;
+    return 'Recovery ring. ' + describeWeek(schedule) + '. Days between sessions: ' + schedule.gaps.join(', ') + '.';
   }
 
   function gapText(schedule) {
@@ -363,7 +424,14 @@
     els.inspectorBadgeText.textContent = schedule.tierLabel;
     var visibleDays = schedule.days.map(titleDay);
     els.selectedDaysLabel.textContent = visibleDays.join(' · ');
-    els.selectedDaysLabel.setAttribute('aria-label', 'Workouts ' + joinList(dayNames(schedule.days)));
+    els.selectedDaysLabel.setAttribute('aria-label', 'Training days ' + joinList(dayNames(schedule.days)));
+    var detail = document.getElementById('weekDetails');
+    detail.replaceChildren();
+    DAYS.forEach(function (day) {
+      var item = document.createElement('li');
+      item.textContent = day.name + ' · ' + describeDay(schedule, day.index);
+      detail.appendChild(item);
+    });
     els.inspectorGaps.textContent = gapText(schedule);
     var fixed = schedule.fixedDays;
     if (fixed.length) {
@@ -411,12 +479,15 @@
     var sessions = state.sessions;
     var sessionWord = sessions === 1 ? 'session' : 'sessions';
     if (data && data.reason === 'day-conflict') {
-      return 'A day can’t be both pinned and unavailable.';
+      return 'A day has conflicting constraints. Choose one constraint per day.';
     }
+    if (data.reason === 'invalid-sport-counts') return 'Enter a whole number from 0 to 7 for each sport.';
+    if (data.reason === 'invalid-sessions') return 'Choose 1–7 sessions across all sports.';
     if (pinned > sessions) {
-      return 'You’ve pinned ' + pinned + ' days but asked for ' + sessions + ' ' + sessionWord + '. Lower the session count or unpin a day.';
+      return 'You’ve pinned ' + pinned + ' days but asked for ' + sessions + ' ' + sessionWord + '. Raise the session count or unpin a day.';
     }
     if (data && data.reason === 'not-enough-days') {
+      if (state.rest.size) return 'Mandatory rest and forbidden days leave ' + data.availableDays + ' eligible days for ' + sessions + ' ' + sessionWord + '. Clear a day constraint or lower the session count.';
       return 'You’ve made ' + forbidden + ' ' + (forbidden === 1 ? 'day' : 'days') + ' unavailable, leaving ' + data.availableDays + ' for ' + sessions + ' ' + sessionWord + '. Allow a day or lower the session count.';
     }
     return 'No seven-day week can satisfy these constraints. Change the frequency or adjust the day constraints.';
@@ -433,6 +504,7 @@
       els.foot.hidden = false;
       return;
     }
+    pager.hidden = true;
     els.emptyState.hidden = false;
     els.legend.hidden = true;
     els.tableHead.hidden = true;
@@ -440,27 +512,26 @@
     els.foot.hidden = true;
     els.limitNote.hidden = true;
     els.emptyText.textContent = emptyMessage();
-    var target = null;
+    els.emptyText.hidden = !els.emptyText.textContent;
+    var target = suggestedTotal();
     var secondaryLabel = 'Clear all constraints';
     var secondaryAction = 'all';
     if (data && data.reason === 'too-many-fixed') {
-      target = state.fixed.size;
       secondaryLabel = 'Clear pinned days';
       secondaryAction = 'fixed';
     } else if (data && data.reason === 'not-enough-days') {
-      target = data.availableDays;
-      secondaryLabel = 'Allow all days';
-      secondaryAction = 'forbidden';
+      secondaryLabel = state.rest.size ? 'Clear rest and forbidden days' : 'Allow all days';
+      secondaryAction = 'blocked';
     }
-    if (target !== null && target >= 1 && target <= 7) {
+    if (target !== null) {
       els.fixSessions.hidden = false;
-      els.fixSessions.textContent = 'Use ' + target + ' sessions';
+      els.fixSessions.textContent = 'Use ' + target + ' Gym ' + (target === 1 ? 'session' : 'sessions');
     } else {
       els.fixSessions.hidden = true;
     }
     els.emptySecondary.textContent = secondaryLabel;
     els.emptySecondary.setAttribute('data-action', secondaryAction);
-    els.emptySecondary.hidden = false;
+    els.emptySecondary.hidden = data.reason === 'invalid-sessions' || data.reason === 'invalid-sport-counts';
     els.inspector.hidden = true;
     els.planList.innerHTML = '';
   }
@@ -481,6 +552,10 @@
       var params = new URLSearchParams();
       params.set('sessions', String(state.sessions));
       params.set('fixed', fixedDaysArray().map(function (d) { return DAY_KEYS[d]; }).join(','));
+      if (state.rest.size) params.set('rest', DAY_KEYS.filter(function (key, index) { return state.rest.has(index); }).join(','));
+      if (!gymOnly() || data.reason === 'invalid-sessions' || data.reason === 'invalid-sport-counts') {
+        params.set('sports', W.SPORTS.map(function (sport) { return state.sportCounts[sport.key] ?? 0; }).join(','));
+      }
       params.set('forbidden', forbiddenDaysArray().map(function (d) { return DAY_KEYS[d]; }).join(','));
       history.replaceState(null, '', location.pathname + '?' + params.toString());
     } catch (err) { /* file:// or restricted history */ }
@@ -523,13 +598,13 @@
     }
   }
 
-  function selectSchedule(mask) {
+  function selectSchedule(id) {
     if (!data) return;
-    var schedule = data.schedules.find(function (s) { return s.mask === mask; });
+    var schedule = data.schedules.find(function (s) { return s.id === id; });
     if (!schedule) return;
-    state.selectedMask = mask;
+    state.selectedId = id;
     els.planList.querySelectorAll('.plan-row').forEach(function (row) {
-      var on = Number(row.getAttribute('data-mask')) === mask;
+      var on = row.dataset.id === id;
       row.classList.toggle('selected', on);
       row.setAttribute('aria-pressed', String(on));
     });
@@ -541,7 +616,17 @@
   function readURL() {
     var params = new URLSearchParams(location.search);
     var sessions = Number(params.get('sessions'));
-    if (Number.isInteger(sessions) && sessions >= 1 && sessions <= 7) state.sessions = sessions;
+    var legacyTotal = Number.isInteger(sessions) && sessions >= 1 && sessions <= 7 ? sessions : DEFAULT_SESSIONS;
+    var sports = params.get('sports');
+    state.sportCounts = { gym: legacyTotal };
+    if (sports !== null) {
+      var counts = sports.split(',');
+      if (counts.length === W.SPORTS.length) {
+        state.sportCounts = Object.fromEntries(W.SPORTS.map(function (sport, index) {
+          return [sport.key, /^[0-7]$/.test(counts[index]) ? Number(counts[index]) : NaN];
+        }));
+      }
+    }
     function parseDays(name) {
       if (!params.has(name)) return null;
       return (params.get(name) || '').split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean).map(function (key) {
@@ -552,14 +637,15 @@
     var forbiddenParam = parseDays('forbidden');
     var forbiddenDays = new Set(forbiddenParam || []);
     state.forbidden = forbiddenDays;
+    state.rest = new Set(parseDays('rest') || []);
     if (fixedParam !== null) {
-      state.fixed = new Set(fixedParam.filter(function (d) { return !forbiddenDays.has(d); }));
+      state.fixed = new Set(fixedParam);
     } else if (params.toString()) {
       state.fixed = new Set();
     } else {
       state.fixed = new Set(DEFAULT_FIXED);
     }
-    state.selectedMask = null;
+    state.selectedId = null;
   }
 
   function fallbackCopy(text) {
@@ -617,55 +703,51 @@
       els.methodPanel.hidden = open;
     });
 
-    els.sessionsGroup.addEventListener('change', function (event) {
-      if (event.target && event.target.name === 'sessions') {
-        state.sessions = Number(event.target.value);
+    sportInputs.forEach(function (input) {
+      input.addEventListener('input', function () {
+        state.sportCounts[input.dataset.sportCount] = input.valueAsNumber;
         render();
-      }
-    });
-
-    els.modeButtons.forEach(function (button) {
-      button.addEventListener('click', function () {
-        state.mode = button.getAttribute('data-mode');
-        syncControls();
-        announce(state.mode === 'fixed'
-          ? 'Pin mode. Choose days that must include a workout.'
-          : 'Forbid mode. Choose days where workouts are not possible.');
       });
     });
+    previousPage.addEventListener('click', function () { goToPage(state.page - 1); });
+    nextPage.addEventListener('click', function () { goToPage(state.page + 1); });
+    pager.addEventListener('submit', function (event) {
+      event.preventDefault();
+      goToPage(pageInput.valueAsNumber);
+    });
 
-    els.daysGroup.addEventListener('click', function (event) {
-      var button = event.target.closest('.day');
-      if (!button) return;
-      var day = Number(button.getAttribute('data-day'));
-      if (state.mode === 'fixed') {
-        if (state.fixed.has(day)) {
-          state.fixed.delete(day);
-        } else {
-          state.fixed.add(day);
-          state.forbidden.delete(day);
-        }
-      } else {
-        if (state.forbidden.has(day)) {
-          state.forbidden.delete(day);
-        } else {
-          state.forbidden.add(day);
-          state.fixed.delete(day);
-        }
-      }
+    els.daysGroup.addEventListener('change', function (event) {
+      var select = event.target.closest('select[data-day]');
+      if (!select) return;
+      var day = Number(select.dataset.day);
+      [state.fixed, state.rest, state.forbidden].forEach(function (set) { set.delete(day); });
+      if (select.value !== 'available') state[select.value].add(day);
       render();
+    });
+
+    sportSteppers.forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (button.getAttribute('aria-disabled') === 'true') return;
+        var input = button.parentElement.querySelector('input');
+        var count = Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : 0;
+        state.sportCounts[input.dataset.sportCount] = Math.min(7, Math.max(0, Math.trunc(count) + Number(button.dataset.step)));
+        if (document.activeElement === input) input.value = state.sportCounts[input.dataset.sportCount];
+        render();
+      });
     });
 
     els.clearFixed.addEventListener('click', function () {
       state.fixed.clear();
       state.forbidden.clear();
+      state.rest.clear();
       render();
+      daySelectors[0].focus();
     });
 
     els.planList.addEventListener('click', function (event) {
       var row = event.target.closest('.plan-row');
       if (!row) return;
-      selectSchedule(Number(row.getAttribute('data-mask')));
+      selectSchedule(row.dataset.id);
     });
 
     els.copyBtn.addEventListener('click', copySelected);
@@ -688,11 +770,9 @@
     }
 
     els.fixSessions.addEventListener('click', function () {
-      var target = null;
-      if (data && data.reason === 'too-many-fixed') target = state.fixed.size;
-      else if (data && data.reason === 'not-enough-days') target = data.availableDays;
-      if (target !== null && target >= 1 && target <= 7) {
-        state.sessions = target;
+      var target = suggestedTotal();
+      if (target !== null) {
+        state.sportCounts.gym = target;
         render();
         focusAfterConstraintChange();
       }
@@ -701,7 +781,10 @@
     els.emptySecondary.addEventListener('click', function () {
       var action = els.emptySecondary.getAttribute('data-action');
       if (action === 'fixed' || action === 'all') state.fixed.clear();
-      if (action === 'forbidden' || action === 'all') state.forbidden.clear();
+      if (action === 'blocked' || action === 'all') {
+        state.forbidden.clear();
+        state.rest.clear();
+      }
       render();
       focusAfterConstraintChange();
     });

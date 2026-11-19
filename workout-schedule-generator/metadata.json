@@ -1,5 +1,5 @@
 {
-  "title": "Weekform — Workout Schedule Generator",
-  "description": "Pin the days you can't move, mark days you can't train, generate every valid weekly workout schedule, and compare them by recovery.",
+  "title": "Weekform — Training Planner",
+  "description": "Compare every valid weekly training schedule for gym, running, cycling, and swimming. Set training, mandatory rest, and forbidden days.",
   "icon": "favicon.svg"
 }

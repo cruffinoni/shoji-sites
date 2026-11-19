@@ -98,6 +98,22 @@ async function waitFor(expression, timeout) {
   throw new Error('Timed out waiting for: ' + expression);
 }
 
+async function setDay(day, choice) {
+  await evaluate(`(function () {
+    const select = document.querySelector('select[data-day="${day}"]');
+    select.value = '${choice}';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+}
+
+async function setSport(sport, count) {
+  await evaluate(`(function () {
+    const input = document.querySelector('[data-sport-count="${sport}"]');
+    input.value = ${JSON.stringify(count)};
+    input.dispatchEvent(new Event('input'));
+  })()`);
+}
+
 async function navigate(url) {
   await send('Page.navigate', { url });
   await waitFor('document.readyState === "complete" && !!window.WeekformLogic && !!document.querySelector(".plan-row, #emptyState:not([hidden])")', 10000);
@@ -129,13 +145,12 @@ const snapshotExpr = [
   '    inspectorHidden: inspector.hidden,',
   '    inspectorParent: inspector.parentElement ? (inspector.parentElement.id || inspector.parentElement.tagName) : null,',
   '    inspectorInSelectedRow: !!(selected && selected.closest("li") && inspector.parentElement === selected.closest("li")),',
-  '    mode: (function(){ var b = document.querySelector(".mode[aria-pressed=\\"true\\"]"); return b ? b.getAttribute("data-mode") : null; })(),',
   '    forbidden: document.getElementById("inspectorForbidden").textContent.trim(),',
   '    forbiddenHidden: document.getElementById("inspectorForbiddenWrap").hidden,',
   '    satHeader: document.querySelector(".week-head span[data-day=\\"5\\"]").classList.contains("is-forbidden"),',
   '    satNode: (function(){ var n = document.querySelector(".plan-row.selected .week .cell:nth-child(6) .mnode"); return n ? n.className : null; })(),',
-  '    satDayState: document.querySelector(".day[data-day=\\"5\\"]").getAttribute("data-state"),',
-  '    satDayLabel: document.querySelector(".day[data-day=\\"5\\"]").getAttribute("aria-label"),',
+  '    satDayState: document.querySelector("select[data-day=\\"5\\"]").getAttribute("data-state"),',
+  '    satDayLabel: document.querySelector("select[data-day=\\"5\\"]").getAttribute("aria-label"),',
   '    emptySecondary: document.getElementById("emptySecondary").textContent.trim(),',
   '    url: location.search,',
   '    width: innerWidth,',
@@ -177,6 +192,7 @@ async function snapshot(label) {
     assert.equal(s.limitHidden, true);
     assert.equal(s.inspectorParent, 'workspace');
     assert.equal(s.overflow, false);
+    assert.equal(await evaluate('document.querySelector(".fixed-field").contains(document.getElementById("clearFixed"))'), true);
     await screenshot('desktop.png');
 
     await sleep(400);
@@ -185,26 +201,24 @@ async function snapshot(label) {
     console.log('AXE VIOLATIONS', JSON.stringify(axeViolations, null, 2));
     assert.deepEqual(axeViolations, []);
 
-    // Forbidden day: forbid mode, unavailable column and ring node, copy output.
-    await evaluate('document.querySelector(\'.mode[data-mode="forbidden"]\').click()');
-    await evaluate('document.querySelector(\'.day[data-day="5"]\').click()');
+    assert.equal(await evaluate(`document.querySelector('select[data-day="5"]').value`), 'available');
+    await setDay(5, 'forbidden');
+    assert.equal(await evaluate(`document.querySelector('select[data-day="5"]').selectedOptions[0].textContent`), 'Forbidden');
     await waitFor('document.getElementById("totalCount").textContent === "10"');
     s = await snapshot('forbidden Saturday');
     assert.equal(s.rows, 10);
     assert.match(s.meta, /3 full recovery/);
     assert.equal(s.limitHidden, true);
-    assert.equal(s.mode, 'forbidden');
     assert.equal(s.forbiddenHidden, false);
     assert.equal(s.forbidden, 'Saturday');
     assert.equal(s.satHeader, true);
     assert.ok(s.satNode.includes('forbidden'));
     assert.equal(s.satDayState, 'forbidden');
-    assert.match(s.satDayLabel, /unavailable/);
+    assert.equal(s.satDayLabel, 'Saturday');
     await sleep(350);
     await screenshot('forbidden.png');
 
     await sleep(400);
-    console.log('FORBIDDEN STYLES', JSON.stringify(await evaluate("(function(){ var pin=document.querySelector('.mode[data-mode=\"fixed\"]'); var act=document.querySelector('.mode[data-mode=\"forbidden\"]'); var ins=document.getElementById('inspector'); var dt=document.querySelector('.ins-stats dt'); function cs(el){ var s=getComputedStyle(el); return {color:s.color,bg:s.backgroundColor,opacity:s.opacity,fontSize:s.fontSize,animation:s.animationName}; } return {pin:cs(pin),act:cs(act),ins:cs(ins),dt:cs(dt),body:getComputedStyle(document.body).backgroundColor,paper:getComputedStyle(document.documentElement).getPropertyValue('--paper'),soft:getComputedStyle(document.documentElement).getPropertyValue('--soft'),muted:getComputedStyle(document.documentElement).getPropertyValue('--muted')}; })()")));
     const axeForbidden = await evaluate("axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } }).then(function(r){ return r.violations.map(function(v){ return { id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.map(function(n){ return n.target.join(' '); }) }; }); })");
     console.log('AXE FORBIDDEN', JSON.stringify(axeForbidden));
     assert.deepEqual(axeForbidden, []);
@@ -213,27 +227,26 @@ async function snapshot(label) {
     await evaluate('document.getElementById("copyBtn").click()');
     await sleep(120);
     const forbiddenCopy = await evaluate('window.__copied');
-    assert.match(forbiddenCopy, /Saturday  Unavailable/);
-    assert.match(forbiddenCopy, /Unavailable days: Saturday/);
+    assert.match(forbiddenCopy, /Saturday  Forbidden/);
+    assert.match(forbiddenCopy, /Forbidden days: Saturday/);
 
     // Forbidding a pinned day clears the pin; one day cannot be both.
-    await evaluate('document.querySelector(\'.day[data-day="6"]\').click()');
+    await setDay(6, 'forbidden');
     await waitFor('document.getElementById("inspectorPinned").textContent.trim() === "None" && document.getElementById("inspectorForbidden").textContent.includes("Sunday")');
     s = await snapshot('forbidden overrides pinned');
-    assert.equal(s.mode, 'forbidden');
     assert.equal(s.forbidden, 'Saturday, Sunday');
     assert.equal(s.total, '10');
 
     await navigate(file);
 
     // UI controls: radio label, fixed-day toggle, clear and immediate update.
-    await evaluate('document.querySelector(\'label[for="s4"]\').click()');
+    await setSport('gym', 4);
     await waitFor('document.getElementById("totalCount").textContent === "20"');
     s = await snapshot('ui four sessions with sunday');
     assert.equal(s.rows, 20);
     assert.match(s.limit, /At most 3 sessions can be separated/);
 
-    await evaluate('document.querySelector(\'.day[data-day="0"]\').click()');
+    await setDay(0, 'fixed');
     await waitFor('document.getElementById("totalCount").textContent === "10"');
     s = await snapshot('ui sunday and monday pinned');
     assert.equal(s.rows, 10);
@@ -245,7 +258,7 @@ async function snapshot(label) {
     assert.equal(s.rows, 35);
     assert.equal(await evaluate('document.getElementById("clearFixed").disabled'), true);
 
-    await evaluate('document.querySelector(\'label[for="s5"]\').click()');
+    await setSport('gym', 5);
     await waitFor('document.getElementById("totalCount").textContent === "21"');
     s = await snapshot('ui five sessions');
     assert.equal(s.rows, 21);
@@ -277,7 +290,7 @@ async function snapshot(label) {
     s = await snapshot('too many unavailable');
     assert.equal(s.rows, 0);
     assert.equal(s.emptyHidden, false);
-    assert.equal(s.fixLabel, 'Use 4 sessions');
+    assert.equal(s.fixLabel, 'Use 4 Gym sessions');
     assert.equal(s.emptySecondary, 'Allow all days');
     assert.match(s.limit, /^$/);
     assert.match(await evaluate('document.getElementById("emptyText").textContent'), /leaving 4 for 5 sessions/);
@@ -298,7 +311,7 @@ async function snapshot(label) {
     s = await snapshot('impossible');
     assert.equal(s.rows, 0);
     assert.equal(s.emptyHidden, false);
-    assert.equal(s.fixLabel, 'Use 4 sessions');
+    assert.equal(s.fixLabel, 'Use 4 Gym sessions');
     await screenshot('impossible.png');
     await evaluate('document.getElementById("fixSessions").click()');
     await waitFor('document.getElementById("emptyState").hidden === true');
@@ -330,7 +343,7 @@ async function snapshot(label) {
     s = await snapshot('seven sessions');
     assert.equal(s.rows, 1);
     assert.match(s.badge, /No rest days/);
-    assert.match(s.limit, /All seven days are workouts/);
+    assert.match(s.limit, /All seven days are training days/);
     await screenshot('all-seven.png');
 
     await navigate(file + '?sessions=3&fixed=sat');
@@ -345,8 +358,8 @@ async function snapshot(label) {
     assert.equal(await evaluate('document.getElementById("copyLabel").textContent'), 'Copied');
     const copied = await evaluate('window.__copied');
     assert.match(copied, /WEEKFORM — weekly training plan/);
-    assert.match(copied, /Tuesday +Workout/);
-    assert.match(copied, /Sunday +Workout \(pinned\)/);
+    assert.match(copied, /Tuesday +Gym/);
+    assert.match(copied, /Sunday +Gym \(pinned\)/);
 
     await evaluate('document.querySelectorAll(".plan-row")[1].focus()');
     assert.equal(await evaluate('document.activeElement.tagName'), 'BUTTON');
@@ -355,6 +368,64 @@ async function snapshot(label) {
     await sleep(120);
     s = await snapshot('second row selected');
     assert.equal(s.selectedRank, '02');
+
+    await navigate(file + '?sessions=3&fixed=');
+    await evaluate(`document.querySelector('[aria-label="Add a Running session"]').click();
+      document.querySelector('[aria-label="Add a Running session"]').click();`);
+    assert.equal(await evaluate('document.querySelector(".sports legend").textContent'), 'Session/sport/week');
+    assert.equal(await evaluate('document.getElementById("assignedCount").textContent'), '5');
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '210');
+    assert.equal(await evaluate('new URLSearchParams(location.search).get("sports")'), '3,2,0,0');
+    await navigate(file + '?sessions=3&fixed=&sports=3,2,0,0');
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '210');
+
+    await setSport('running', 5);
+    assert.equal(await evaluate('document.getElementById("allocation").dataset.state'), 'warning');
+    assert.equal(await evaluate('document.getElementById("assignedCount").textContent'), '8');
+    assert.match(await evaluate('document.getElementById("emptyText").textContent'), /1–7 sessions/);
+    await setSport('running', 0);
+    await setSport('gym', 0);
+    await navigate(file + await evaluate('location.search'));
+    assert.equal(await evaluate('document.getElementById("assignedCount").textContent'), '0');
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '0');
+
+    const mixedURL = '?sessions=5&fixed=mon&rest=tue&forbidden=wed&sports=2,1,1,1';
+    await navigate(file + mixedURL);
+    s = await snapshot('mixed sports with mandatory rest and forbidden days');
+    assert.equal(s.title, 'Weekform — Training Planner');
+    assert.equal(s.total, '60');
+    assert.equal(s.rows, 40);
+    assert.equal(await evaluate('document.querySelectorAll(".plan-row.selected .mandatory-rest").length'), 1);
+    const firstId = await evaluate('document.querySelector(".plan-row.selected").dataset.id');
+    await evaluate('document.querySelectorAll(".plan-row")[1].click()');
+    assert.notEqual(await evaluate('document.querySelector(".plan-row.selected").dataset.id'), firstId);
+    assert.equal(await evaluate('document.getElementById("selectedDaysLabel").textContent'), s.selectedDays);
+    assert.match(await evaluate('document.getElementById("weekDetails").textContent'), /Mandatory rest.*Forbidden/);
+
+    await evaluate('document.getElementById("nextPage").click()');
+    s = await snapshot('final page');
+    assert.equal(s.rows, 20);
+    assert.equal(s.selectedRank, '41');
+    assert.equal(await evaluate('Array.from(document.querySelectorAll(".plan-row")).at(-1).querySelector(".rank").textContent === "60"'), true);
+    assert.equal(await evaluate('document.getElementById("nextPage").disabled'), true);
+    await evaluate('document.getElementById("pageNumber").value = 1; document.getElementById("pager").requestSubmit()');
+    assert.equal(await evaluate('document.querySelector(".plan-row.selected").dataset.id'), firstId);
+
+    await evaluate('window.__copied = ""; document.execCommand = function(){ window.__copied = document.activeElement.value; return true; }; document.getElementById("copyBtn").click()');
+    await waitFor('window.__copied.includes("Tuesday   Mandatory rest")');
+    assert.match(await evaluate('window.__copied'), /Wednesday Forbidden/);
+
+    await setSport('running', 0);
+    assert.equal(await evaluate('document.getElementById("allocation").dataset.state'), 'matched');
+    assert.equal(await evaluate('document.getElementById("assignedCount").textContent'), '4');
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '48');
+    await setSport('running', 1);
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '60');
+    await navigate(file + await evaluate('location.search'));
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '60');
+    await setDay(1, 'forbidden');
+    assert.equal(await evaluate(`document.querySelector('select[data-day="1"]').dataset.state`), 'forbidden');
+    assert.equal(await evaluate('new URLSearchParams(location.search).has("rest")'), false);
 
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await send('Page.reload', { ignoreCache: true });
@@ -428,7 +499,22 @@ async function snapshot(label) {
     assert.equal(s.width, 320);
     assert.equal(s.overflow, false);
     assert.equal(s.inspectorInSelectedRow, true);
+    assert.equal(await evaluate('document.querySelector(".fixed-field").getBoundingClientRect().top >= document.querySelector(".sports").getBoundingClientRect().bottom'), true);
+    await setDay(1, 'rest');
+    assert.equal(await evaluate(`document.querySelector('select[data-day="1"]').selectedOptions[0].textContent`), 'Rest');
+    assert.equal((await snapshot('mobile weekday dropdown')).overflow, false);
+    await setDay(1, 'available');
     await screenshot('mobile-320.png');
+
+    await navigate(file + '?sessions=5&fixed=&sports=2,1,1,1');
+    assert.equal(await evaluate('document.getElementById("totalCount").textContent'), '1260');
+    await evaluate('document.getElementById("pageNumber").value = 32; document.getElementById("pager").requestSubmit()');
+    s = await snapshot('last page at 320px');
+    assert.equal(s.overflow, false);
+    assert.equal(s.rows, 20);
+    assert.equal(s.selectedRank, '1241');
+    assert.equal(await evaluate('Array.from(document.querySelectorAll(".rank")).at(-1).textContent'), '1260');
+
 
     assert.deepEqual(exceptions, []);
     assert.deepEqual(consoleErrors, []);

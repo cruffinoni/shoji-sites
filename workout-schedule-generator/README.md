@@ -1,4 +1,4 @@
-# Weekform — workout schedule generator
+# Weekform — Training Planner
 
 Single-page shoji site. Published files live in `dist/` and are served at
 `/s/workout-schedule-generator/`.
@@ -16,21 +16,18 @@ Single-page shoji site. Published files live in `dist/` and are served at
 
 ## Behavior
 
-1. Choose 1–7 sessions per week. Use **Pin** mode to mark days that must contain a workout, or **Forbid** mode to mark days where a workout is impossible. A day is never both.
-2. Every unique seven-day schedule containing exactly that many sessions and all pinned days, and containing no unavailable days, is generated and ranked.
-3. The list shows every valid week. Full-recovery plans are marked `Full`; unavoidable or extra back-to-back pairs are shown as `1 adjacent`, `2 adjacent`, and so on.
-4. The selected week opens a recovery ring, rest-gap values, pinned day and a copy action.
-5. Impossible constraints show an actionable empty state; forced overlap shows one limitation note.
-6. Unavailable days stay in the week as rest days for recovery calculations, and are marked in the table, ring and copied plan.
-7. State is mirrored in the URL as `?sessions=3&fixed=sun&forbidden=sat`, so a view can be shared or reloaded.
+1. Set the session count for Gym, Running, Cycling, and Swimming. The counts add up to the weekly total of 1–7 sessions. There is one session per training day.
+2. Use each weekday dropdown to choose **Open**, **Pin**, **Rest**, or **Forbidden**. Pinned days require training, Rest days require recovery, and Forbidden days are excluded.
+3. Every distinct valid sport assignment is ranked. Browse pages of up to 40 plans, open the selected week's recovery ring, or copy its daily assignments.
+4. The URL stores the settings, for example `?sessions=3&fixed=sun&rest=mon&forbidden=sat&sports=1,1,1,0`. Links without sport counts use Gym for all sessions.
 
 ## Ranking
 
 - Treat the week as a cycle; Sunday and Monday are adjacent.
-- Unavailable days are excluded from workouts but still count as rest in gap calculations.
-- Adjacent pairs = workout pairs on consecutive days, counted around the loop.
+- Forbidden days count toward the elapsed calendar gap between sessions.
+- Adjacent pairs = training-day pairs on consecutive days, counted around the loop.
 - Primary sort: fewest adjacent pairs.
-- Secondary: smallest variance of rest gaps around the loop (evenest spacing), then shortest longest-gap, then largest shortest-gap, then Monday-first mask order.
+- Secondary: smallest variance of calendar gaps around the loop (evenest spacing), then shortest longest-gap, then largest shortest-gap, then Monday-first mask order.
 - `Full recovery` means zero adjacent pairs. When the session count makes that impossible, the top plans are `Minimum overlap`; remaining schedules stay listed as `More overlap`.
 - Nothing is filtered out for having tighter spacing.
 

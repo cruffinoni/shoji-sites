@@ -97,10 +97,10 @@ assert.equal(cyc.schedules[0].pairs, 1);
 // Copy output
 const copy = W.formatScheduleText(a.schedules[0], a.fixed);
 assert.ok(copy.includes('WEEKFORM'));
-assert.ok(copy.includes('Tuesday   Workout'));
+assert.ok(copy.includes('Tuesday   Gym'));
 assert.ok(copy.includes('Monday    Rest'));
-assert.ok(copy.includes('Sunday    Workout (pinned)'));
-assert.ok(copy.includes('Adjacent workout pairs: 0'));
+assert.ok(copy.includes('Sunday    Gym (pinned)'));
+assert.ok(copy.includes('Adjacent training-day pairs: 0'));
 assert.ok(copy.includes('Sunday and Monday are consecutive'));
 
 // Forbidden days are never scheduled and still consume rest-day space.
@@ -114,8 +114,8 @@ for (const sched of forb.schedules) {
   assert.ok(sched.days.includes(6), 'fixed Sunday included');
 }
 const forbCopy = W.formatScheduleText(forb.schedules[0], forb.fixed, forb.forbidden);
-assert.ok(forbCopy.includes('Saturday  Unavailable'));
-assert.ok(forbCopy.includes('Unavailable days: Saturday'));
+assert.ok(forbCopy.includes('Saturday  Forbidden'));
+assert.ok(forbCopy.includes('Forbidden days: Saturday'));
 
 // A day cannot be both fixed and forbidden.
 let conflict = W.generateSchedules({ sessions: 3, fixed: [0], forbidden: [0] });
@@ -142,3 +142,34 @@ console.log('B', b.total, b.fullCount, b.schedules[0].days.join(','));
 console.log('C', c.total, 'min', c.minPairs, 'minCount', c.minimumCount, 'more', c.moreCount);
 console.log('D', d.schedules[0].days.join(','), d.schedules[0].tierLabel);
 console.log('4', four.total, 'minCount', four.minimumCount, 'more', four.moreCount);
+const counts = { gym: 2, running: 1, cycling: 1, swimming: 1 };
+
+function verifyExhaustive(options, total) {
+  const result = W.generateSchedules({ sessions: 5, sportCounts: counts, ...options });
+  const symbols = ['-', ...W.SPORTS.map(sport => sport.key)];
+  const expected = new Set();
+  for (let code = 0; code < symbols.length ** 7; code++) {
+    const week = Array.from({ length: 7 }, (_, day) => symbols[Math.floor(code / symbols.length ** day) % symbols.length]);
+    if ((options.fixed || []).some(day => week[day] === '-')) continue;
+    if ([...(options.rest || []), ...(options.forbidden || [])].some(day => week[day] !== '-')) continue;
+    if (Object.entries(counts).every(([sport, count]) => week.filter(key => key === sport).length === count)) {
+      expected.add(week.join(','));
+    }
+  }
+  assert.equal(result.total, total);
+  assert.deepEqual(new Set(result.schedules.map(schedule => schedule.id)), expected);
+  assert.equal(result.total, expected.size);
+  for (const schedule of result.schedules) {
+    assert.equal(schedule.sportByDay.map(key => key || '-').join(','), schedule.id);
+  }
+  return result.schedules[0];
+}
+
+const mixed = verifyExhaustive({ fixed: [0], rest: [1], forbidden: [2] }, 60);
+verifyExhaustive({}, 1260);
+assert.match(W.formatScheduleText(mixed), /Monday    Gym \(pinned\)\nTuesday   Mandatory rest\nWednesday Forbidden/);
+assert.equal(W.generateSchedules({ sessions: 3, sportCounts: { running: 2 } }).reason, 'sport-total-mismatch');
+assert.equal(W.generateSchedules({ sessions: 3, sportCounts: { gym: 3, running: 0.5 } }).reason, 'invalid-sport-counts');
+assert.equal(W.generateSchedules({ sessions: 3, rest: [1], forbidden: [1] }).reason, 'day-conflict');
+assert.equal(W.generateSchedules({ sessions: 3, rest: [1], fixed: [1] }).reason, 'day-conflict');
+assert.equal(W.generateSchedules({ sessions: 6, rest: [1], forbidden: [2] }).reason, 'not-enough-days');

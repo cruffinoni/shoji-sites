@@ -15,6 +15,18 @@
     { index: 6, key: 'sun', short: 'SUN', name: 'Sunday' }
   ];
 
+  var SPORTS = [
+    { key: 'gym', name: 'Gym', initial: 'G', color: '#2e5a43' },
+    { key: 'running', name: 'Running', initial: 'R', color: '#785123' },
+    { key: 'cycling', name: 'Cycling', initial: 'C', color: '#675078' },
+    { key: 'swimming', name: 'Swimming', initial: 'S', color: '#315b76' }
+  ];
+  var SPORT_BY_KEY = Object.fromEntries(SPORTS.map(function (sport) { return [sport.key, sport]; }));
+
+  function normalizeDays(days) {
+    return Array.from(new Set((Array.isArray(days) ? days : []).filter(isDay))).sort(function (a, b) { return a - b; });
+  }
+
   function isDay(value) {
     return Number.isInteger(value) && value >= 0 && value <= 6;
   }
@@ -118,19 +130,23 @@
   function generateSchedules(options) {
     options = options || {};
     var sessions = Number(options.sessions);
-    var fixedInput = Array.isArray(options.fixed) ? options.fixed : [];
-    var forbiddenInput = Array.isArray(options.forbidden) ? options.forbidden : [];
-    var fixed = Array.from(new Set(fixedInput.filter(isDay))).sort(function (a, b) { return a - b; });
-    var forbidden = Array.from(new Set(forbiddenInput.filter(isDay))).sort(function (a, b) { return a - b; });
+    var fixed = normalizeDays(options.fixed);
+    var forbidden = normalizeDays(options.forbidden);
+    var rest = normalizeDays(options.rest);
+    var sportCounts = options.sportCounts === undefined ? { gym: sessions } : options.sportCounts;
+    var remaining = SPORTS.map(function (sport) { return Object.hasOwn(sportCounts || {}, sport.key) ? sportCounts[sport.key] : 0; });
     var forbiddenMask = daysToMask(forbidden);
-    var availableDays = 7 - forbidden.length;
-    var maxIndependent = maxIndependentCount(forbiddenMask);
+    var restMask = daysToMask(rest);
+    var blockedMask = forbiddenMask | restMask;
+    var availableDays = 7 - bitCount(blockedMask);
+    var maxIndependent = maxIndependentCount(blockedMask);
 
     function impossible(reason) {
       return {
         sessions: sessions,
         fixed: fixed,
         forbidden: forbidden,
+        rest: rest,
         impossible: true,
         reason: reason,
         schedules: [],
@@ -144,14 +160,25 @@
       };
     }
 
+    if (options.sportCounts === undefined && (!Number.isInteger(sessions) || sessions < 1 || sessions > 7)) {
+      return impossible('invalid-sessions');
+    }
+    if (!sportCounts || typeof sportCounts !== 'object' || Array.isArray(sportCounts) ||
+        Object.keys(sportCounts).some(function (key) { return !Object.hasOwn(SPORT_BY_KEY, key); }) ||
+        remaining.some(function (count) { return !Number.isInteger(count) || count < 0 || count > 7; })) {
+      return impossible('invalid-sport-counts');
+    }
     if (!Number.isInteger(sessions) || sessions < 1 || sessions > 7) return impossible('invalid-sessions');
-    if (fixed.some(function (day) { return forbidden.indexOf(day) !== -1; })) return impossible('day-conflict');
+    if (remaining.reduce(function (sum, count) { return sum + count; }, 0) !== sessions) {
+      return impossible('sport-total-mismatch');
+    }
+    if ((daysToMask(fixed) & blockedMask) || (forbiddenMask & restMask)) return impossible('day-conflict');
     if (fixed.length > sessions) return impossible('too-many-fixed');
     if (sessions > availableDays) return impossible('not-enough-days');
 
     var optional = [];
     for (var d = 0; d < 7; d++) {
-      if (fixed.indexOf(d) === -1 && forbidden.indexOf(d) === -1) optional.push(d);
+      if (fixed.indexOf(d) === -1 && !(blockedMask & (1 << d))) optional.push(d);
     }
     var need = sessions - fixed.length;
     var combinationsFound = combinations(optional, need);
@@ -162,6 +189,29 @@
     });
 
     schedules.sort(sortSchedules);
+    schedules = schedules.flatMap(function (schedule) {
+      var assignments = [];
+      var sportByDay = Array(7).fill(null);
+      function assign(index) {
+        if (index === schedule.days.length) {
+          assignments.push(Object.assign({}, schedule, {
+            id: sportByDay.map(function (key) { return key || '-'; }).join(','),
+            sportByDay: sportByDay.slice()
+          }));
+          return;
+        }
+        var day = schedule.days[index];
+        SPORTS.forEach(function (sport, sportIndex) {
+          if (!remaining[sportIndex]) return;
+          remaining[sportIndex]--;
+          sportByDay[day] = sport.key;
+          assign(index + 1);
+          remaining[sportIndex]++;
+        });
+      }
+      assign(0);
+      return assignments;
+    });
     var minPairs = schedules.length ? schedules[0].pairs : 0;
     var counts = { full: 0, minimum: 0, more: 0 };
 
@@ -169,6 +219,7 @@
       schedule.rank = index + 1;
       schedule.fixedDays = fixed.slice();
       schedule.forbiddenDays = forbidden.slice();
+      schedule.restDays = rest.slice();
       schedule.isFixed = schedule.days.filter(function (day) { return fixed.indexOf(day) !== -1; });
       if (schedule.pairs === 0) schedule.tier = 'full';
       else if (schedule.pairs === minPairs) schedule.tier = 'minimum';
@@ -184,6 +235,7 @@
       sessions: sessions,
       fixed: fixed,
       forbidden: forbidden,
+      rest: rest,
       fixedMask: daysToMask(fixed),
       forbiddenMask: forbiddenMask,
       availableDays: availableDays,
@@ -208,19 +260,22 @@
     lines.push('');
     DAYS.forEach(function (day) {
       var tag;
-      if (forbidden.indexOf(day.index) !== -1) tag = 'Unavailable';
-      else if (schedule.days.indexOf(day.index) !== -1) tag = fixed.indexOf(day.index) !== -1 ? 'Workout (pinned)' : 'Workout';
+      if (forbidden.indexOf(day.index) !== -1) tag = 'Forbidden';
+      else if (schedule.sportByDay[day.index]) {
+        tag = SPORT_BY_KEY[schedule.sportByDay[day.index]].name;
+        if (fixed.indexOf(day.index) !== -1) tag += ' (pinned)';
+      } else if (schedule.restDays.includes(day.index)) tag = 'Mandatory rest';
       else tag = 'Rest';
       lines.push(day.name.padEnd(10, ' ') + tag);
     });
     lines.push('');
-    lines.push('Adjacent workout pairs: ' + schedule.pairs);
-    lines.push('Rest between sessions: ' + schedule.gaps.join(', ') + ' days');
+    lines.push('Adjacent training-day pairs: ' + schedule.pairs);
+    lines.push('Days between sessions: ' + schedule.gaps.join(', ') + ' days');
     if (forbidden.length) {
-      lines.push('Unavailable days: ' + forbidden.map(function (d) { return DAYS[d].name; }).join(', '));
+      lines.push('Forbidden days: ' + forbidden.map(function (d) { return DAYS[d].name; }).join(', '));
     }
     if (schedule.pairs === 0) {
-      lines.push('Recovery: full — every session has at least one rest day before the next.');
+      lines.push('Recovery: full — every session has at least one calendar day without a scheduled session before the next.');
     } else {
       lines.push('Recovery: ' + schedule.tierLabel + ' — ' + schedule.pairs + ' back-to-back pair' + (schedule.pairs === 1 ? '' : 's') + '.');
     }
@@ -230,6 +285,8 @@
 
   return {
     DAYS: DAYS,
+    SPORTS: SPORTS,
+    SPORT_BY_KEY: SPORT_BY_KEY,
     isDay: isDay,
     maskToDays: maskToDays,
     daysToMask: daysToMask,
