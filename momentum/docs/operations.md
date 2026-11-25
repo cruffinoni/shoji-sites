@@ -34,7 +34,7 @@ docker compose -f data/sites/momentum/compose.yaml ps
 curl --fail --silent --show-error http://127.0.0.1:8082/s/momentum/api/healthz
 ```
 
-The sidecar is built locally, so Watchtower does not update it. Re-run the build command after changing `server/` or the Dockerfile.
+The sidecar is built locally, so Komodo does not update it automatically. Deploy the `momentum` Komodo stack after changing `server/` or the Dockerfile.
 
 Inside the network, the direct health check is:
 
