@@ -1,0 +1,5 @@
+{
+  "title": "Notification partitions — Notification Hub",
+  "description": "A visual guide to notification-hub's nine rotating partitions: how a day gets a slot, what happens at midnight, and the 7-day retention rule.",
+  "icon": "favicon.svg"
+}
