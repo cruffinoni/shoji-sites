@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime state and local artifacts
+data/
+state/
+.dist-staging/
+*.sqlite3
+*.db
+*.log
+
+# Editors / operating systems
+.DS_Store
+.idea/
+.vscode/

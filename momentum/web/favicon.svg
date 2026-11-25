@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">Task and timer icon — 12:15</title>
+  <desc id="description">A cream-colored timer above a checked task, on a forest-green rounded square.</desc>
+  <rect width="512" height="512" rx="80" fill="#426b57"/>
+
+  <!-- Same icon as the 1:20 version, with only the clock hands changed. -->
+  <g fill="none" stroke="#fffefa" stroke-width="18" stroke-linecap="butt">
+    <path d="M 141.2 116.3 A 59 59 0 0 1 193.7 168.8"/>
+    <path d="M 193.7 181.2 A 59 59 0 1 1 128.8 116.3"/>
+  </g>
+
+  <!-- Actual clock geometry: hour just after 12; minute at 3. -->
+  <path d="M 138.3 150.2 L 135 175 L 175 175"
+        fill="none" stroke="#fffefa" stroke-width="13"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="229" y="161" width="214" height="28" rx="14" fill="#fffefa"/>
+
+  <rect x="77" y="283" width="116" height="116" rx="13"
+        fill="none" stroke="#fffefa" stroke-width="18"/>
+  <path d="M 99 341 L 123 365 L 168 321"
+        fill="none" stroke="#fffefa" stroke-width="17"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="229" y="327" width="214" height="28" rx="14" fill="#fffefa"/>
+</svg>

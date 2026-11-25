@@ -1,0 +1,8 @@
+{
+  "routes": [
+    {
+      "prefix": "/api/",
+      "target": "http://momentum-api:8766/day-reset-api/"
+    }
+  ]
+}
