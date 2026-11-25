@@ -1,0 +1,14 @@
+[Unit]
+Description=Momentum Task API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dayrion/dev/momentum
+ExecStart=/usr/bin/python3 -B /home/dayrion/dev/momentum/server/app.py --host 127.0.0.1 --port 8766 --db-file /home/dayrion/.local/state/task-board/tasks.sqlite3
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target
