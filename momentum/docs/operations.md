@@ -12,14 +12,22 @@
 
 - The shoji Compose project owns the `shoji-backends` network. It is declared normally in `docker-compose.yml`, so `docker compose up` creates it. Do not run `docker network create`.
 - This project references `shoji-backends` as an external network.
-- Start shoji first, then this sidecar:
+- Start shoji first, then this sidecar.
+
+In the homelab, Komodo encodes that order: the `shoji` stack comes before the
+`momentum` stack (`after = ["shoji"]`), and `momentum` uses
+`run_build = true` with `auto_pull = false` because its image is built
+from this checkout.
+
+For a standalone deployment:
 
 ```sh
 docker compose up -d
 docker compose -f data/sites/momentum/compose.yaml up -d --build
 ```
 
-- Stop this sidecar before tearing down shoji, if the shared network is being removed:
+Stop this sidecar before tearing down shoji, if the shared network is being
+removed:
 
 ```sh
 docker compose -f data/sites/momentum/compose.yaml down
@@ -28,18 +36,28 @@ docker compose down
 
 ## Deploy or update
 
+The sidecar is built locally from this repository, so Komodo does not update it
+automatically. The flow is:
+
+1. Commit and push the change to `cruffinoni/shoji-sites` `master`.
+2. Deploy the `momentum` stack in Komodo, or run the `Momentum Rebuild`
+   Procedure, which pulls `shoji-sites` and rebuilds the sidecar.
+
+Skipping step 1 changes nothing: the stack builds from the Git clone, not from a
+working copy.
+
+A standalone deployment can build directly:
+
 ```sh
 docker compose -f data/sites/momentum/compose.yaml up -d --build
 docker compose -f data/sites/momentum/compose.yaml ps
 curl --fail --silent --show-error http://127.0.0.1:8082/s/momentum/api/healthz
 ```
 
-The sidecar is built locally, so Komodo does not update it automatically. Deploy the `momentum` Komodo stack after changing `server/` or the Dockerfile.
-
 Inside the network, the direct health check is:
 
 ```sh
-docker compose -f data/sites/momentum/compose.yaml exec momentum-api \
+docker exec momentum-momentum-api-1 \
   python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/day-reset-api/healthz')"
 ```
 
